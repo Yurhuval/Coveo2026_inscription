@@ -1,8 +1,4 @@
 import math
-import random
-from idlelib.outwin import file_line_pats
-from math import floor
-
 from game_message import *
 
 
@@ -34,10 +30,7 @@ class Bot:
         actions = []
         remaining_biomass = game_message.maximumNumberOfBiomassPerTurn
 
-        for couple in self.links:
-            colony1 = self.get_col_at(game_message,couple[0].to_pos())
-            colony2 = self.get_col_at(game_message, couple[1].to_pos())
-            actions.extend(self.remove_superficial(game_message, colony1, colony2))
+
 
         i=0
         while remaining_biomass > 0 and i < len(self.get_sorted_colonies(game_message)):
@@ -48,23 +41,28 @@ class Bot:
             actions.extend(actions_to_add)
             i += 1
 
+        for couple in self.links:
+            colony1 = self.get_col_at(game_message,couple[0].to_pos())
+            colony2 = self.get_col_at(game_message, couple[1].to_pos())
+            actions.extend(self.remove_superficial(game_message, colony1, colony2))
         print(game_message)
         return actions
 
-    # NOT WORKING
     def remove_superficial(self, game_message: TeamGameState, colony1: Colony, colony2: Colony):
         path = self.path(colony1.position, colony2.position)
-        maximum_link_value = min(colony2.nutrients, colony1.nutrients)
-        current_link_value = self.get_path_value(game_message, path)
-        to_remove = current_link_value - maximum_link_value
-        if to_remove > 0:
-            actions = {}
-            for position in path:
+        maximum_link_value = min(colony2.futureNutrients[0], colony1.futureNutrients[0])
+        current_link_values = self.get_path_value(game_message, path)
+        actions = {}
+        for position in path:
+            current_link_value = current_link_values[Point(position)]
+            to_remove = current_link_value - maximum_link_value
+            if to_remove > 0:
                 key = (position.x, position.y)
                 actions[key] = to_remove
-            return [RemoveBiomassAction(value, Position(key[0], key[1])) for key, value in actions.items()]
-        else:
-            return []
+            else:
+                return []
+        return [RemoveBiomassAction(value, Position(key[0], key[1])) for key, value in actions.items()]
+
 
     def get_col_at(self,game_message : TeamGameState, position: Position):
         for colony in game_message.map.colonies:
@@ -82,9 +80,9 @@ class Bot:
 
         path = self.path(colony1.position, colony2.position)
         maximum_link_value = min(colony2.futureNutrients[0], colony1.futureNutrients[0])
-        current_link_value = self.get_path_value(game_message, path)
+        current_link_values = self.get_path_value(game_message, path)
 
-        to_add = maximum_link_value - current_link_value
+        to_add = maximum_link_value - (sum(current_link_values.values()) // len(current_link_values))
         given_thingy = remaining_biomass
 
         path_value_to_add = min((given_thingy // len(path), to_add))
@@ -94,15 +92,21 @@ class Bot:
             key = (position.x, position.y)
             actions[key] = path_value_to_add
         self.links.add((Point(colony1.position), Point(colony2.position)))
-        return ([AddBiomassAction(value, Position(key[0], key[1])) for key, value in actions.items()], added)
+        returned = []
+        for key, value in actions.items():
+            if value != 0:
+                returned.append(AddBiomassAction(value, Position(key[0], key[1])))
+        return (returned, added)
 
 
 
-    def get_path_value(self, game_message: TeamGameState, path: list[Position]) -> float:
-        value = 0
+    def get_path_value(self, game_message: TeamGameState, path: list[Position]) -> dict:
+        values = {}
         for position in path:
-            value += game_message.map.biomass[position.x][position.y]
-        return value / len(path)
+            values[Point(position)] = game_message.map.biomass[position.x][position.y]
+
+        return values
+
 
     def path(self, start: Position, end: Position):
         positions = []
